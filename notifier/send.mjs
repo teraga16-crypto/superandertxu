@@ -4,7 +4,7 @@ import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore/lite';
 import webpush from 'web-push';
 import { CONFIG } from '../config.js';
-import { FAMILY_EMAIL, pinToPassword, expand, reminderTime, isDone, ymd, addDays, catEmoji } from '../core.js';
+import { FAMILY_EMAIL, pinToPassword, setExtraHolidays, expand, reminderTime, isDone, ymd, addDays, catEmoji } from '../core.js';
 
 const PIN = process.env.FAMILY_PIN;
 if (!CONFIG.firebase.apiKey) { console.log('Firebase aún no está configurado. Nada que hacer.'); process.exit(0); }
@@ -21,7 +21,8 @@ const vapid = (await getDoc(doc(db, 'config', 'vapid'))).data();
 if (!vapid) { console.log('Nadie ha activado los avisos todavía.'); process.exit(0); }
 webpush.setVapidDetails('mailto:avisos@superandertxu.app', vapid.publicKey, vapid.privateKey);
 
-const [events, people, subs, sent] = await Promise.all([all('events'), all('people'), all('subs'), all('sent')]);
+const [events, people, subs, sent, holidays] = await Promise.all([all('events'), all('people'), all('subs'), all('sent'), all('holidays')]);
+setExtraHolidays(holidays);
 const sentIds = new Set(sent.map((s) => s.id));
 const name = (id) => people.find((p) => p.id === id)?.name;
 const now = new Date();

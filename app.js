@@ -1,6 +1,6 @@
 import { store, configured } from './store.js';
 import {
-  CATEGORIES, REMINDERS, catEmoji, ymd, parseYmd, addDays, expand,
+  CATEGORIES, REMINDERS, holidayName, setExtraHolidays, catEmoji, ymd, parseYmd, addDays, expand,
   startOf, endOf, isDone, sortOcc,
 } from './core.js';
 
@@ -15,6 +15,7 @@ const S = {
   user: undefined,
   people: [],
   events: [],
+  holidays: [],
   view: ls.get('view', '48h'),
   filter: new Set(ls.get('filter', [])),
   month: (() => { const d = new Date(); d.setDate(1); return d; })(),
@@ -57,6 +58,7 @@ const boot = () => store.onAuth((u) => {
       render();
     });
     store.watch('events', (list) => { S.events = list; render(); });
+    store.watch('holidays', (list) => { S.holidays = list; setExtraHolidays(list); render(); });
   }
   if (!u) watching = false;
   render();
@@ -112,6 +114,8 @@ function filterChips() {
   return all + ps + none;
 }
 
+const holTag = (d) => (holidayName(d) ? ` <span class="holtag">🎉 ${esc(holidayName(d))}</span>` : '');
+
 const passFilter = (ev) => {
   if (!S.filter.size) return true;
   const ids = (ev.people || []).filter(person);
@@ -139,7 +143,7 @@ function view48() {
     const list = occ.filter((o) => o.date === d);
     if (i === 2 && !list.length) continue;
     const name = ['Hoy', 'Mañana', 'Pasado mañana'][i];
-    html += `<h2>${name} <span class="when">· ${fmtDay(d)}</span></h2>`;
+    html += `<h2>${name} <span class="when">· ${fmtDay(d)}</span>${holTag(d)}</h2>`;
     html += list.length ? list.map((o) => itemHtml(o)).join('') : `<div class="empty">Nada previsto${i === 0 ? ' 🎉' : ''}</div>`;
   }
   return html;
@@ -216,7 +220,7 @@ function viewMonth() {
       const p = person((o.ev.people || []).find(person));
       return p ? `<i class="tk" style="--c:${p.color}"></i>` : `<i class="tk none"></i>`;
     }).join('');
-    cells += `<button class="cell ${d.getMonth() !== m.getMonth() ? 'out' : ''} ${ds === today ? 'today' : ''} ${ds === S.selDay ? 'sel' : ''}" data-day="${ds}">
+    cells += `<button class="cell ${d.getMonth() !== m.getMonth() ? 'out' : ''} ${holidayName(ds) ? 'hol' : ''} ${ds === today ? 'today' : ''} ${ds === S.selDay ? 'sel' : ''}" data-day="${ds}">
       <span class="n">${d.getDate()}</span><span class="ticks">${ticks}</span>${list.length > 6 ? `<span class="more">+${list.length - 6}</span>` : ''}</button>`;
   }
   const sel = (byDay[S.selDay] || []).sort(sortOcc);
@@ -229,7 +233,7 @@ function viewMonth() {
       <button class="iconbtn" data-mon="1" aria-label="Mes siguiente">›</button>
     </div>
     <div class="grid">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((w) => `<div class="wd">${w}</div>`).join('')}${cells}</div>
-    <h2>${fmtDay(S.selDay)}</h2>
+    <h2>${fmtDay(S.selDay)}${holTag(S.selDay)}</h2>
     ${sel.length ? sel.map((o) => itemHtml(o)).join('') : '<div class="empty">Nada este día</div>'}`;
 }
 
@@ -283,6 +287,7 @@ function openForm(ev, occDate) {
     interval: ev?.repeat?.interval || 1,
     days: ev?.repeat?.days?.length ? [...ev.repeat.days] : [parseYmd(occDate || ymd(new Date())).getDay()],
     until: ev?.repeat?.until || '',
+    skipHolidays: ev ? !!ev.repeat?.skipHolidays : true,
     reminder: ev?.reminder ?? '',
   };
   if (isNew && S.filter.size === 1) {
@@ -351,20 +356,24 @@ function openForm(ev, occDate) {
     q('#cats').innerHTML = CATEGORIES.map((c) => `<button class="opt ${f.category === c.id ? 'on' : ''}" data-c="${c.id}">${c.emoji} ${c.label}</button>`).join('');
     q('#cats').querySelectorAll('[data-c]').forEach((b) => b.onclick = () => { f.category = f.category === b.dataset.c ? '' : b.dataset.c; drawCats(); });
   };
+  const skipRow = () => `<div class="row"><label for="skipHol">Saltar festivos</label><input type="checkbox" id="skipHol" class="switch" ${f.skipHolidays ? 'checked' : ''}></div>`;
+  const bindSkip = () => { q('#skipHol').onchange = (e) => (f.skipHolidays = e.target.checked); };
   const drawRep = () => {
     const unit = { daily: ['día', 'días'], weekly: ['semana', 'semanas'], monthly: ['mes', 'meses'], yearly: ['año', 'años'] }[f.freq];
     q('#dateLbl').textContent = f.freq === 'none' ? 'Fecha' : 'Desde';
     if (f.freq === 'none') { q('#repOpts').innerHTML = ''; return; }
     if (f.freq === 'weekdays') {
-      q('#repOpts').innerHTML = `<div class="row"><label for="until">Hasta</label><input type="date" id="until" value="${f.until}"><button class="clear" data-clear="until">⊗</button></div>`;
+      q('#repOpts').innerHTML = `<div class="row"><label for="until">Hasta</label><input type="date" id="until" value="${f.until}"><button class="clear" data-clear="until">⊗</button></div>${skipRow()}`;
       q('#until').onchange = (e) => (f.until = e.target.value);
+      bindSkip();
       bindClear(q('#repOpts'));
       return;
     }
     q('#repOpts').innerHTML = `
       ${f.freq === 'weekly' ? `<div class="days">${WD.map(([l, n]) => `<button data-wd="${n}" class="${f.days.includes(n) ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''}
       <div class="row"><label for="interval">Cada</label><select id="interval">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(f.interval) === n ? 'selected' : ''}>${n} ${n === 1 ? unit[0] : unit[1]}</option>`).join('')}</select></div>
-      <div class="row"><label for="until">Hasta (opcional)</label><input type="date" id="until" value="${f.until}"><button class="clear" data-clear="until">⊗</button></div>`;
+      <div class="row"><label for="until">Hasta (opcional)</label><input type="date" id="until" value="${f.until}"><button class="clear" data-clear="until">⊗</button></div>${skipRow()}`;
+    bindSkip();
     q('#repOpts').querySelectorAll('[data-wd]').forEach((b) => b.onclick = () => {
       const n = Number(b.dataset.wd);
       f.days = f.days.includes(n) ? f.days.filter((x) => x !== n) : [...f.days, n];
@@ -412,7 +421,8 @@ function openForm(ev, occDate) {
     const data = {
       title: f.title, kind: f.kind, date: f.date, start: f.start || '', end: f.start ? (f.end || '') : '',
       people: f.people, category: f.category, location: f.location.trim(), notes: f.notes.trim(),
-      repeat: f.freq === 'none' ? { freq: 'none' } : f.freq === 'weekdays' ? { freq: 'weekly', interval: 1, until: f.until || '', days: [1, 2, 3, 4, 5] } : {
+      repeat: f.freq === 'none' ? { freq: 'none' } : f.freq === 'weekdays' ? { freq: 'weekly', interval: 1, until: f.until || '', days: [1, 2, 3, 4, 5], skipHolidays: f.skipHolidays } : {
+        skipHolidays: f.skipHolidays,
         freq: f.freq, interval: Number(f.interval) || 1, until: f.until || '',
         days: f.freq === 'weekly' ? [...f.days].sort() : [],
       },
@@ -531,6 +541,11 @@ async function openSettings() {
     <div class="lbl">Personas</div>
     <div class="field" id="plist"></div>
     <button class="btn ghost" id="addp">＋ Añadir persona (abuelos, tíos, canguro…)</button>
+    <div class="lbl">Festivos</div>
+    <div class="note">Ya están incluidos los festivos oficiales de Euskadi de 2026 y 2027. Añade aquí los de vuestro municipio u otros días sin actividad (puentes, vacaciones de la guardería…).</div>
+    <div class="field" id="hlist"></div>
+    <div class="field"><div class="row"><label for="hdate">Nuevo festivo</label><input type="date" id="hdate"></div></div>
+    <button class="btn ghost" id="addh">＋ Añadir festivo</button>
     <div class="lbl">Seguridad</div>
     ${store.demo ? '' : '<button class="btn ghost" id="pin">Cambiar PIN familiar</button>'}
     <button class="btn danger" id="logout">Cerrar sesión en este dispositivo</button>
@@ -587,6 +602,29 @@ async function openSettings() {
     });
   };
   drawPeople();
+  const drawHol = () => {
+    const list = [...S.holidays].sort((a, b) => a.date.localeCompare(b.date));
+    q('#hlist').innerHTML = list.length ? list.map((h) => `<div class="person"><span style="flex:1"><b>${esc(fmtDay(h.date, { day: 'numeric', month: 'short', year: 'numeric' }))}</b> · ${esc(h.name)}</span>
+      <button class="clear" data-delh="${h.id}" aria-label="Eliminar">🗑</button></div>`).join('') : '<div class="note">Todavía no hay festivos propios.</div>';
+    q('#hlist').querySelectorAll('[data-delh]').forEach((b) => b.onclick = async () => {
+      await store.remove('holidays', b.dataset.delh);
+      S.holidays = S.holidays.filter((x) => x.id !== b.dataset.delh);
+      setExtraHolidays(S.holidays);
+      drawHol();
+    });
+  };
+  drawHol();
+  q('#addh').onclick = async () => {
+    const date = q('#hdate').value;
+    if (!date) { toast('Elige primero la fecha'); return; }
+    const name = prompt('Nombre del festivo (p. ej. San Ignacio, fiestas del pueblo):', 'Festivo local');
+    if (name === null) return;
+    const id = await store.add('holidays', { date, name: name.trim() || 'Festivo local' });
+    if (!S.holidays.some((h) => h.id === id)) S.holidays.push({ id, date, name: name.trim() || 'Festivo local' });
+    setExtraHolidays(S.holidays);
+    q('#hdate').value = '';
+    drawHol();
+  };
   q('#addp').onclick = async () => {
     const name = prompt('Nombre (p. ej. Abuela Maite, Tío Iker):');
     if (!name?.trim()) return;

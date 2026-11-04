@@ -41,12 +41,33 @@ export const addDays = (d, n) => {
 const DAY = 86400000;
 const dayNum = (d) => Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY);
 
+// Festivos oficiales de Euskadi (Decreto 82/2025 para 2026 y Decreto 90/2026 para 2027).
+export const HOLIDAYS = {
+  '2026-01-01': 'Año Nuevo', '2026-01-06': 'Reyes', '2026-03-19': 'San José',
+  '2026-04-02': 'Jueves Santo', '2026-04-03': 'Viernes Santo', '2026-04-06': 'Lunes de Pascua',
+  '2026-05-01': 'Fiesta del Trabajo', '2026-07-25': 'Santiago Apóstol', '2026-08-15': 'Asunción',
+  '2026-10-12': 'Fiesta Nacional', '2026-12-08': 'Inmaculada', '2026-12-25': 'Navidad',
+  '2027-01-01': 'Año Nuevo', '2027-01-06': 'Reyes', '2027-03-25': 'Jueves Santo',
+  '2027-03-26': 'Viernes Santo', '2027-03-29': 'Lunes de Pascua', '2027-05-01': 'Fiesta del Trabajo',
+  '2027-10-07': 'Aniversario del primer Gobierno Vasco', '2027-10-12': 'Fiesta Nacional',
+  '2027-11-01': 'Todos los Santos', '2027-12-06': 'Día de la Constitución', '2027-12-08': 'Inmaculada',
+  '2027-12-25': 'Navidad',
+};
+let extraHolidays = {};
+// Festivos locales añadidos por la familia en Ajustes: [{ date, name }]
+export const setExtraHolidays = (list) => {
+  extraHolidays = {};
+  (list || []).forEach((h) => { if (h.date) extraHolidays[h.date] = h.name || 'Festivo local'; });
+};
+export const holidayName = (d) => extraHolidays[d] || HOLIDAYS[d] || '';
+
 export function occursOn(ev, dateStr) {
   if (!ev.date || dateStr < ev.date) return false;
   if ((ev.exdates || []).includes(dateStr)) return false;
   const r = ev.repeat;
   if (!r || !r.freq || r.freq === 'none') return dateStr === ev.date;
   if (r.until && dateStr > r.until) return false;
+  if (r.skipHolidays && holidayName(dateStr)) return false;
   const iv = Math.max(1, Number(r.interval) || 1);
   const s = parseYmd(ev.date);
   const d = parseYmd(dateStr);
