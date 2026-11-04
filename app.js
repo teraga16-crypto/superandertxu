@@ -263,6 +263,7 @@ function choose(title, options) {
 }
 
 // ---------- Formulario ----------
+const isWeekdays = (r) => r?.freq === 'weekly' && (Number(r.interval) || 1) === 1 && [...(r.days || [])].sort().join() === '1,2,3,4,5';
 const WD = [['L', 1], ['M', 2], ['X', 3], ['J', 4], ['V', 5], ['S', 6], ['D', 0]];
 
 function openForm(ev, occDate) {
@@ -278,7 +279,7 @@ function openForm(ev, occDate) {
     category: ev?.category || '',
     location: ev?.location || '',
     notes: ev?.notes || '',
-    freq: ev?.repeat?.freq || 'none',
+    freq: isWeekdays(ev?.repeat) ? 'weekdays' : (ev?.repeat?.freq || 'none'),
     interval: ev?.repeat?.interval || 1,
     days: ev?.repeat?.days?.length ? [...ev.repeat.days] : [parseYmd(occDate || ymd(new Date())).getDay()],
     until: ev?.repeat?.until || '',
@@ -297,7 +298,7 @@ function openForm(ev, occDate) {
       <button data-kind="tarea" class="${f.kind === 'tarea' ? 'on' : ''}">✅ Tarea / obligación</button>
     </div>
     <div class="field">
-      <div class="row"><label for="date">Fecha</label><input type="date" id="date" value="${f.date}"></div>
+      <div class="row"><label for="date" id="dateLbl">${f.freq === 'none' ? 'Fecha' : 'Desde'}</label><input type="date" id="date" value="${f.date}"></div>
       <div class="row"><label for="start">Hora inicio</label><input type="time" id="start" value="${f.start}"><button class="clear" data-clear="start">⊗</button></div>
       <div class="row"><label for="end">Hora fin</label><input type="time" id="end" value="${f.end}"><button class="clear" data-clear="end">⊗</button></div>
     </div>
@@ -311,7 +312,7 @@ function openForm(ev, occDate) {
     <div class="field">
       <div class="row"><label for="freq">Repetir</label>
         <select id="freq">
-          ${[['none', 'Nunca'], ['daily', 'Cada día'], ['weekly', 'Cada semana'], ['monthly', 'Cada mes'], ['yearly', 'Cada año']].map(([v, l]) => `<option value="${v}" ${f.freq === v ? 'selected' : ''}>${l}</option>`).join('')}
+          ${[['none', 'Nunca'], ['daily', 'Cada día'], ['weekdays', 'Días laborables (L-V)'], ['weekly', 'Cada semana'], ['monthly', 'Cada mes'], ['yearly', 'Cada año']].map(([v, l]) => `<option value="${v}" ${f.freq === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select></div>
       <div id="repOpts"></div>
       <div class="row"><label for="reminder">Aviso</label>
@@ -352,7 +353,14 @@ function openForm(ev, occDate) {
   };
   const drawRep = () => {
     const unit = { daily: ['día', 'días'], weekly: ['semana', 'semanas'], monthly: ['mes', 'meses'], yearly: ['año', 'años'] }[f.freq];
+    q('#dateLbl').textContent = f.freq === 'none' ? 'Fecha' : 'Desde';
     if (f.freq === 'none') { q('#repOpts').innerHTML = ''; return; }
+    if (f.freq === 'weekdays') {
+      q('#repOpts').innerHTML = `<div class="row"><label for="until">Hasta</label><input type="date" id="until" value="${f.until}"><button class="clear" data-clear="until">⊗</button></div>`;
+      q('#until').onchange = (e) => (f.until = e.target.value);
+      bindClear(q('#repOpts'));
+      return;
+    }
     q('#repOpts').innerHTML = `
       ${f.freq === 'weekly' ? `<div class="days">${WD.map(([l, n]) => `<button data-wd="${n}" class="${f.days.includes(n) ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''}
       <div class="row"><label for="interval">Cada</label><select id="interval">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(f.interval) === n ? 'selected' : ''}>${n} ${n === 1 ? unit[0] : unit[1]}</option>`).join('')}</select></div>
@@ -400,10 +408,11 @@ function openForm(ev, occDate) {
     f.date = q('#date').value;
     if (!f.title) { toast('Escribe un título'); q('#title').focus(); return; }
     if (!f.date) { toast('Elige una fecha'); return; }
+    if (f.freq !== 'none' && f.until && f.until < f.date) { toast('La fecha «Hasta» es anterior a «Desde»'); return; }
     const data = {
       title: f.title, kind: f.kind, date: f.date, start: f.start || '', end: f.start ? (f.end || '') : '',
       people: f.people, category: f.category, location: f.location.trim(), notes: f.notes.trim(),
-      repeat: f.freq === 'none' ? { freq: 'none' } : {
+      repeat: f.freq === 'none' ? { freq: 'none' } : f.freq === 'weekdays' ? { freq: 'weekly', interval: 1, until: f.until || '', days: [1, 2, 3, 4, 5] } : {
         freq: f.freq, interval: Number(f.interval) || 1, until: f.until || '',
         days: f.freq === 'weekly' ? [...f.days].sort() : [],
       },
