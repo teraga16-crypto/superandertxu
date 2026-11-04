@@ -1,7 +1,7 @@
 import { store, configured } from './store.js';
 import {
   CATEGORIES, REMINDERS, holidayName, setExtraHolidays, catEmoji, ymd, parseYmd, addDays, expand,
-  startOf, endOf, isDone, sortOcc,
+  endOf, isDone, sortOcc,
 } from './core.js';
 
 const $app = document.getElementById('app');
@@ -41,7 +41,7 @@ function toast(msg) {
 }
 
 // ---------- Arranque ----------
-export const VERSION = '4';
+export const VERSION = '5';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => {
     r.update().catch(() => {});
@@ -93,7 +93,7 @@ function render() {
       </div>
       ${store.demo ? '<div class="banner">Modo prueba: los datos se guardan solo en este dispositivo.</div>' : ''}
       <div class="seg">
-        <button data-view="48h" class="${S.view === '48h' ? 'on' : ''}">Próximas 48 h</button>
+        <button data-view="48h" class="${S.view === '48h' ? 'on' : ''}">Próximos 7 días</button>
         <button data-view="mes" class="${S.view === 'mes' ? 'on' : ''}">Mes</button>
       </div>
       <div class="filters">${filterChips()}</div>
@@ -137,10 +137,10 @@ const passFilter = (ev) => {
 };
 const visibleEvents = () => S.events.filter(passFilter);
 
-// ---------- Vista 48 h ----------
+// ---------- Vista próximos 7 días ----------
 function view48() {
   const now = new Date();
-  const limit = new Date(now.getTime() + 48 * 3600000);
+  const DAYS = 7;
   const evs = visibleEvents();
   const today = ymd(now);
   let html = '';
@@ -150,13 +150,13 @@ function view48() {
     .filter((o) => !isDone(o)).sort(sortOcc);
   if (late.length) html += `<h2 class="late">Pendiente de días anteriores</h2>` + late.map((o) => itemHtml(o, { showDate: true })).join('');
 
-  const occ = expand(evs, today, ymd(limit)).filter((o) => startOf(o) <= limit).sort(sortOcc);
-  for (let i = 0; i < 3; i++) {
+  const occ = expand(evs, today, ymd(addDays(now, DAYS - 1))).sort(sortOcc);
+  for (let i = 0; i < DAYS; i++) {
     const d = ymd(addDays(now, i));
     const list = occ.filter((o) => o.date === d);
-    if (i === 2 && !list.length) continue;
-    const name = ['Hoy', 'Mañana', 'Pasado mañana'][i];
-    html += `<h2>${name} <span class="when">· ${fmtDay(d)}</span>${holTag(d)}</h2>`;
+    const when = i < 2 ? `${['Hoy', 'Mañana'][i]} <span class="when">· ${fmtDay(d)}</span>`
+      : `${fmtDay(d, { weekday: 'long' })} <span class="when">· ${fmtDay(d, { day: 'numeric', month: 'long' })}</span>`;
+    html += `<h2>${when}${holTag(d)}</h2>`;
     html += list.length ? list.map((o) => itemHtml(o)).join('') : `<div class="empty">Nada previsto${i === 0 ? ' 🎉' : ''}</div>`;
   }
   return html;
