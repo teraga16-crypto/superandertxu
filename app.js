@@ -41,7 +41,7 @@ function toast(msg) {
 }
 
 // ---------- Arranque ----------
-export const VERSION = '3 · festivos';
+export const VERSION = '4';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => {
     r.update().catch(() => {});
@@ -230,8 +230,11 @@ function viewMonth() {
     const ds = ymd(d);
     const list = (byDay[ds] || []).sort(sortOcc);
     const ticks = list.slice(0, 6).map((o) => {
-      const p = person((o.ev.people || []).find(person));
-      return p ? `<i class="tk" style="--c:${p.color}"></i>` : `<i class="tk none"></i>`;
+      const cs = (o.ev.people || []).filter(person).map((id) => person(id).color);
+      if (!cs.length) return `<i class="tk none"></i>`;
+      const bg = cs.length === 1 ? cs[0]
+        : `conic-gradient(${cs.map((c, i) => `${c} ${(i / cs.length) * 360}deg ${((i + 1) / cs.length) * 360}deg`).join(',')})`;
+      return `<i class="tk" style="--c:${bg}"></i>`;
     }).join('');
     cells += `<button class="cell ${d.getMonth() !== m.getMonth() ? 'out' : ''} ${holidayName(ds) ? 'hol' : ''} ${ds === today ? 'today' : ''} ${ds === S.selDay ? 'sel' : ''}" data-day="${ds}">
       <span class="n">${d.getDate()}</span><span class="ticks">${ticks}</span>${list.length > 6 ? `<span class="more">+${list.length - 6}</span>` : ''}</button>`;
