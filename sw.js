@@ -1,5 +1,5 @@
 // Service worker: funciona sin conexión y muestra los avisos.
-const CACHE = 'sa-v1';
+const CACHE = 'sa-v3';
 const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'store.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'icon-180.png'];
 
 self.addEventListener('install', (e) => {
@@ -14,7 +14,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then((r) => {
+    fetch(e.request, { cache: 'no-cache' }).then((r) => {
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
       return r;

@@ -41,7 +41,20 @@ function toast(msg) {
 }
 
 // ---------- Arranque ----------
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+export const VERSION = '3 · festivos';
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => {
+    r.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); });
+  }).catch(() => {});
+  // Cuando llega una versión nueva, recargar una vez para usarla.
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded || document.querySelector('.backdrop')) return;
+    reloaded = true;
+    location.reload();
+  });
+}
 
 let watching = false;
 const boot = () => store.onAuth((u) => {
@@ -549,7 +562,7 @@ async function openSettings() {
     <div class="lbl">Seguridad</div>
     ${store.demo ? '' : '<button class="btn ghost" id="pin">Cambiar PIN familiar</button>'}
     <button class="btn danger" id="logout">Cerrar sesión en este dispositivo</button>
-    <div class="note" style="text-align:center;margin-top:18px">SUPERANDERTXU · ${configured ? 'conectado' : 'modo prueba'}</div>
+    <div class="note" style="text-align:center;margin-top:18px">SUPERANDERTXU · versión ${VERSION} · ${configured ? 'conectado' : 'modo prueba'}</div>
   `);
   const q = (s) => el.querySelector(s);
   q('#done').onclick = () => { close(); render(); };
