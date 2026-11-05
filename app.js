@@ -41,7 +41,7 @@ function toast(msg) {
 }
 
 // ---------- Arranque ----------
-export const VERSION = '5';
+export const VERSION = '6';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => {
     r.update().catch(() => {});
@@ -282,6 +282,12 @@ function choose(title, options) {
   });
 }
 
+// Guarda sin esperar a internet: el cambio se ve al momento y se sincroniza en cuanto hay conexión.
+function commit(ops, okMsg) {
+  toast(okMsg);
+  store.batch(ops).catch((e) => alert('⚠️ No se pudo guardar el cambio: ' + (e.message || e) + '\nInténtalo de nuevo.'));
+}
+
 // ---------- Formulario ----------
 const isWeekdays = (r) => r?.freq === 'weekly' && (Number(r.interval) || 1) === 1 && [...(r.days || [])].sort().join() === '1,2,3,4,5';
 const WD = [['L', 1], ['M', 2], ['X', 3], ['J', 4], ['V', 5], ['S', 6], ['D', 0]];
@@ -445,30 +451,30 @@ function openForm(ev, occDate) {
       reminder: f.reminder === '' ? '' : Number(f.reminder),
       updatedAt: Date.now(),
     };
-    try {
-      if (isNew) {
-        await store.add('events', { ...data, exdates: [], done: {}, createdAt: Date.now() });
-      } else if (recurring) {
-        const scope = await choose('Este evento se repite', [
-          { label: 'Cambiar solo este día', v: 'one' },
-          { label: 'Cambiar toda la serie', v: 'all' },
-        ]);
-        if (!scope) return;
-        if (scope === 'one') {
-          await store.update('events', ev.id, { exdates: [...(ev.exdates || []), occDate] });
-          await store.add('events', { ...data, repeat: { freq: 'none' }, exdates: [], done: ev.done?.[occDate] ? { [f.date]: true } : {}, createdAt: Date.now() });
-        } else {
-          if (data.date === occDate) data.date = ev.date; // mantener el inicio de la serie
-          await store.update('events', ev.id, data);
-        }
+    let ops;
+    if (isNew) {
+      ops = [{ type: 'add', c: 'events', data: { ...data, exdates: [], done: {}, createdAt: Date.now() } }];
+    } else if (recurring) {
+      const scope = await choose('Este evento se repite', [
+        { label: 'Cambiar solo este día', v: 'one' },
+        { label: 'Cambiar toda la serie', v: 'all' },
+      ]);
+      if (!scope) return;
+      if (scope === 'one') {
+        // Las dos cosas a la vez: quitar el día de la serie y crear la copia editada.
+        ops = [
+          { type: 'add', c: 'events', data: { ...data, repeat: { freq: 'none' }, exdates: [], done: ev.done?.[occDate] ? { [f.date]: true } : {}, createdAt: Date.now() } },
+          { type: 'update', c: 'events', id: ev.id, data: { exdates: [...(ev.exdates || []), occDate] } },
+        ];
       } else {
-        await store.update('events', ev.id, data);
+        if (data.date === occDate) data.date = ev.date; // mantener el inicio de la serie
+        ops = [{ type: 'update', c: 'events', id: ev.id, data }];
       }
-      close();
-      toast('Guardado');
-    } catch (e) {
-      toast('Error al guardar: ' + e.message);
+    } else {
+      ops = [{ type: 'update', c: 'events', id: ev.id, data }];
     }
+    commit(ops, 'Guardado');
+    close();
   };
 
   if (!isNew) q('#del').onclick = async () => {
@@ -478,15 +484,15 @@ function openForm(ev, occDate) {
         { label: 'Toda la serie', v: 'all', cls: 'danger' },
       ]);
       if (!scope) return;
-      if (scope === 'one') await store.update('events', ev.id, { exdates: [...(ev.exdates || []), occDate] });
-      else await store.remove('events', ev.id);
+      commit(scope === 'one'
+        ? [{ type: 'update', c: 'events', id: ev.id, data: { exdates: [...(ev.exdates || []), occDate] } }]
+        : [{ type: 'remove', c: 'events', id: ev.id }], 'Eliminado');
     } else {
       const ok = await choose(`¿Eliminar «${ev.title}»?`, [{ label: 'Eliminar', v: true, cls: 'danger' }]);
       if (!ok) return;
-      await store.remove('events', ev.id);
+      commit([{ type: 'remove', c: 'events', id: ev.id }], 'Eliminado');
     }
     close();
-    toast('Eliminado');
   };
 }
 

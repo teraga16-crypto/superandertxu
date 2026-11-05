@@ -44,6 +44,13 @@ function localStore() {
       write(c, d);
     },
     async remove(c, id) { const d = read(c); delete d[id]; write(c, d); },
+    async batch(ops) {
+      for (const op of ops) {
+        if (op.type === 'add') await this.add(op.c, op.data);
+        else if (op.type === 'update') await this.update(op.c, op.id, op.data);
+        else if (op.type === 'remove') await this.remove(op.c, op.id);
+      }
+    },
   };
 }
 
@@ -96,6 +103,16 @@ async function firebaseStore() {
     async set(c, id, v) { await F.setDoc(F.doc(db, c, id), v); },
     async update(c, id, v) { await F.updateDoc(F.doc(db, c, id), v); },
     async remove(c, id) { await F.deleteDoc(F.doc(db, c, id)); },
+    // Varias escrituras a la vez: o se aplican todas o ninguna.
+    async batch(ops) {
+      const b = F.writeBatch(db);
+      for (const op of ops) {
+        if (op.type === 'add') b.set(F.doc(F.collection(db, op.c)), op.data);
+        else if (op.type === 'update') b.update(F.doc(db, op.c, op.id), op.data);
+        else if (op.type === 'remove') b.delete(F.doc(db, op.c, op.id));
+      }
+      await b.commit();
+    },
   };
 }
 
